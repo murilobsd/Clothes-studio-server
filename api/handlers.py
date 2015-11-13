@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 import logging
 from tornado import gen
 from api.models import ItemModel
@@ -62,18 +63,22 @@ class ItemHandler(BaseHandler):
 
 
 class UploadHandler(BaseHandler):
+    SUPPORTED_METHODS = ("CONNECT", "GET", "HEAD", "POST", "DELETE", "PATCH", "PUT", "OPTIONS")
+
     def initialize(self, **kwargs):
         super(UploadHandler, self).initialize(**kwargs)
 
+    def options(self, *args, **kwargs):
+        pass
+
+    def get(self):
+        print("GET ok")
+        self.render_json({"result": "OK"})
+
     def post(self):
-        fileinfo = self.request.files['filearg'][0]
-        print("fileinfo is", fileinfo)
-        fname = fileinfo['filename']
-        # extn = os.path.splitext(fname)[1]
-        # cname = str(uuid.uuid4()) + extn
-        # f = open(location(settings['upload_path'] + fname), 'w')
-        with open(location(settings['upload_path'] + fname), 'wb') as f:
-            f.write(fileinfo['body'])
-        # self.finish(cname + " is uploaded!! Check %s folder" %__UPLOADS__)
+        file_info = self.json
+        file_name = file_info['filename']
+        with open(location(settings['upload_path'] + file_name), 'wb') as f:
+            f.write(base64.b64decode(file_info['base64']))
 
         self.render_json({"result": "OK"})
