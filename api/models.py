@@ -1,20 +1,8 @@
+# https://schematics.readthedocs.org/en/latest/index.html - schematics docs
 from base.models import BaseModel
 from schematics.types import IntType, StringType
-from schematics.types.compound import ListType
+from schematics.types.compound import ListType, ModelType
 from schematics.exceptions import ValidationError, ModelConversionError
-
-
-class ItemModel(BaseModel):
-    """
-    Модель для товаров
-    """
-    MONGO_COLLECTION = 'items'  #: Имя коллекции в DB
-    name = StringType(required=True)  #: название объекта (required)
-    images = ListType(StringType())  #: список картинок
-    tags = ListType(StringType())  #: список тегов
-    cost = IntType(default=0)  #: стоимость
-    sale_cost = IntType(default=0)  # стоимость со скидкой
-    category = StringType(required=True)  # категория товара (required)
 
 
 class CategoryModel(BaseModel):
@@ -51,12 +39,34 @@ class CategoryModel(BaseModel):
         pass
 
 
+class ItemModel(BaseModel):
+    """
+    Модель для товаров
+    """
+    TAGS = ["sale", "new"]
+    MONGO_COLLECTION = 'items'  #: Имя коллекции в DB
+    name = StringType(required=True)  #: название объекта (required)
+    images = ListType(StringType())  #: список картинок
+    tags = ListType(StringType(choices=TAGS))  #: список тегов
+    cost = IntType(default=0)  #: стоимость
+    sale_cost = IntType(default=0)  # стоимость со скидкой
+    category = StringType(required=True)  # категория товара (required)
+    # _category = ModelType(CategoryModel, required=True)  # категория товара (required)
+    #
+    # @property
+    # def category(self):
+    #     return getattr(self, '_db', None)
+    #
+    # def set_category(self, category):
+    #     self._category = CategoryModel()
+
+
 if __name__ == "__main__":
     item = ItemModel(
         {
-            'name':     '',
-            'images':   '12.jpg, 11.jpg',
-            'tags':     [],
+            'name': '',
+            'images': '12.jpg, 11.jpg',
+            'tags': [],
             # 'cost':     12,
             'category': "dresses"
         }

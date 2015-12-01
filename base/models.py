@@ -15,24 +15,22 @@ l = logging.getLogger(__name__)
 
 class BaseModel(Model):
     _id = NumberType(number_class=ObjectId, number_type="ObjectId")
-    # errors = []
 
     def __init__(self, *args, **kwargs):
         self.errors = []
         self.set_db(kwargs.pop('db', None))
-        if args[0].get("errors"):
+        if args and args[0].get("errors"):
             self.errors.append(args[0]['errors'])
-
-        super(BaseModel, self).__init__(*args, **kwargs)
-        # игнорируем поля отсутствующие в модели
-        # try:
-        #     super(BaseModel, self).__init__(*args, **kwargs)
-        # except ModelConversionError as error:
-        #     args_dict = args[0]
-        #     for key in error.messages.keys():
-        #         del args_dict[key]
-        #     # print(args_dict)
-        #     super(BaseModel, self).__init__(args_dict, *args, **kwargs)
+        try:
+            super(BaseModel, self).__init__(*args, **kwargs)
+        except ModelConversionError as error:
+            self.errors.append(error.messages)
+            args_dict = args[0]
+            # print("errors = ", error.messages.keys())
+            # print("dict = ", args[0])
+            for key in error.messages.keys():
+                del args_dict[key]
+            super(BaseModel, self).__init__(args_dict, *args[1:], **kwargs)
 
     @property
     def db(self):
@@ -65,20 +63,19 @@ class BaseModel(Model):
     @gen.coroutine
     def save(self, db=None, collection=None, ser=None):
         """
-
+        Сохраняет объект в db
         """
         try:
             self.validate()
         except ModelValidationError as error:
             self.errors.append(error.messages)
+        if self.errors:
+            return
         # save Obj to DB
         db = db or self.db
         c = self.check_collection(collection)
         data = self.get_data_for_save(ser)
-        # result = yield motor.Op(db[c].save, data)
-        # return self, self.errors
-        print('db = ', db)
-
+        # result = None
         for i in self.reconnect_amount():
             try:
                 result = yield motor.Op(db[c].save, data)
@@ -87,8 +84,28 @@ class BaseModel(Model):
                 if exceed:
                     raise e
             else:
-                self._id = result
-                return self, self.errors
+                if result:
+                    self._id = result
+                return
+
+    @classmethod
+    @gen.coroutine
+    def find_one(cls, db, query, collection=None, model=True):
+        # result = None
+        query = cls.process_query(query)
+        for i in cls.reconnect_amount():
+            try:
+                result = yield motor.Op(
+                    db[cls.check_collection(collection)].find_one, query)
+            except ConnectionFailure as e:
+                exceed = yield cls.check_reconnect_tries_and_wait(i, 'find_one')
+                if exceed:
+                    raise e
+            else:
+                print('result = ', result)
+                if model and result:
+                    result = cls.make_model(result, "find_one", db=db)
+                raise gen.Return(result or [])
 
     @staticmethod
     def reconnect_amount():
@@ -105,3 +122,23 @@ class BaseModel(Model):
                 reconnect_number + 1, cls.__name__, func_name, timeout))
             io_loop = ioloop.IOLoop.instance()
             yield gen.Task(io_loop.add_timeout, timedelta(seconds=timeout))
+
+    @classmethod
+    def make_model(cls, data, method_name, field_names_set=None, db=None):
+        """
+        Create model instance from data (dict).
+        """
+        if field_names_set is None:
+            field_names_set = set(cls._fields.keys())
+        else:
+            if not isinstance(field_names_set, set):
+                field_names_set = set(field_names_set)
+        new_keys = set(data.keys()) - field_names_set
+        if new_keys:
+            l.warning(
+                "'{0}' has unhandled fields in DB: "
+                "'{1}'. {2} returned data: '{3}'"
+                .format(cls.__name__, new_keys, data, method_name))
+            for new_key in new_keys:
+                del data[new_key]
+        return cls(raw_data=data, db=db)
